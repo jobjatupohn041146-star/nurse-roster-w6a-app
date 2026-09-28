@@ -36,6 +36,8 @@ class RosterHandler(BaseHTTPRequestHandler):
 
         if path in ('/', '/index.html'):
             self.serve_file(os.path.join(STATIC_DIR, 'index.html'), 'text/html; charset=utf-8')
+        elif path == '/health':
+            self.send_json({'status': 'ok', 'service': 'nurse-roster-w6a'})
         elif path.startswith('/static/'):
             rel_path = path[len('/static/'):]
             file_path = os.path.join(STATIC_DIR, rel_path)
@@ -47,6 +49,9 @@ class RosterHandler(BaseHTTPRequestHandler):
             self.send_json(roster_engine.DEFAULT_RULES)
         else:
             self.send_error(404, 'Not Found')
+
+    def log_message(self, format, *args):
+        pass  # suppress per-request logs in production
 
     def do_POST(self):
         parsed = urlparse(self.path)
