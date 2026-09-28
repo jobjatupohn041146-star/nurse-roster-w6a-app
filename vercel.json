@@ -1,31 +1,6 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/*.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "50mb"
-      }
-    },
-    {
-      "src": "static/**",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    { "src": "/api/initial", "dest": "/api/initial.py" },
-    { "src": "/api/rules", "dest": "/api/rules.py" },
-    { "src": "/api/solve", "dest": "/api/solve.py" },
-    { "src": "/api/validate", "dest": "/api/validate.py" },
-    { "src": "/api/import", "dest": "/api/import_excel.py" },
-    { "src": "/api/export", "dest": "/api/export.py" },
-    { "src": "/api/nurse-ics", "dest": "/api/nurse_ics.py" },
-    { "src": "/static/(.*)", "dest": "/static/$1" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/api/import", "destination": "/api/import_excel" },
+    { "source": "/api/nurse-ics", "destination": "/api/nurse_ics" }
   ]
 }

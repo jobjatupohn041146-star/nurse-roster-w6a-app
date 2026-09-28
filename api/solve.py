@@ -1,58 +1,57 @@
 """
-api/solve.py — Vercel serverless function
-POST /api/solve  →  runs CP-SAT solver and returns solved schedule
+api/solve.py — Vercel Python Serverless Function
+POST /api/solve  →  runs CP-SAT solver, returns solved schedule
 """
 import json
 import os
 import sys
+from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import roster_engine
 
-def handler(request):
-    # Handle CORS preflight
-    if request.method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type'
-            },
-            'body': ''
-        }
+class handler(BaseHTTPRequestHandler):
 
-    try:
-        body = json.loads(request.body or '{}')
-        nurses = body.get('nurses', [])
-        days = body.get('days', list(range(1, 32)))
-        rules = body.get('rules', {})
-        prev_tail = body.get('prev_tail', {})
-        locked_grid = body.get('locked_grid', None)
-        allow_ck = body.get('allow_ck', True)
-        time_limit = body.get('time_limit', 30)
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._cors()
+        self.end_headers()
 
-        result = roster_engine.solve_schedule(
-            nurses=nurses,
-            days=days,
-            rules=rules,
-            prev_tail=prev_tail,
-            locked_grid=locked_grid,
-            allow_ck=allow_ck,
-            time_limit_sec=time_limit
-        )
+    def do_POST(self):
+        try:
+            body = self._read_body()
+            result = roster_engine.solve_schedule(
+                nurses=body.get('nurses', []),
+                days=body.get('days', list(range(1, 32))),
+                rules=body.get('rules', {}),
+                prev_tail=body.get('prev_tail', {}),
+                locked_grid=body.get('locked_grid', None),
+                allow_ck=body.get('allow_ck', True),
+                time_limit_sec=body.get('time_limit', 30)
+            )
+            self._send_json(result)
+        except Exception as e:
+            self._send_json({'success': False, 'message': f'Server Error: {str(e)}'}, 500)
 
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps(result, ensure_ascii=False)
-        }
-    except Exception as e:
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'success': False, 'message': f'Server Error: {str(e)}'})
-        }
+    def _read_body(self):
+        length = int(self.headers.get('Content-Length', 0))
+        if length == 0:
+            return {}
+        return json.loads(self.rfile.read(length).decode('utf-8'))
+
+    def _cors(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+
+    def _send_json(self, obj, status=200):
+        body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self._cors()
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        pass

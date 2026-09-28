@@ -1,41 +1,34 @@
 """
-api/import_excel.py — Vercel serverless function
-POST /api/import  →  parses uploaded Excel file and returns roster data
+api/import_excel.py — Vercel Python Serverless Function
+POST /api/import  →  parses uploaded Excel file, returns roster JSON
 """
 import json
 import os
 import sys
-import base64
+from http.server import BaseHTTPRequestHandler
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import roster_engine
 
-def handler(request):
-    if request.method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'POST, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type'
-            },
-            'body': ''
-        }
+class handler(BaseHTTPRequestHandler):
 
-    try:
-        content_type = request.headers.get('content-type', '')
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._cors()
+        self.end_headers()
 
-        if 'multipart/form-data' in content_type:
-            # Get raw body - Vercel may base64-encode binary
-            raw_body = request.body
-            if isinstance(raw_body, str):
-                body_bytes = raw_body.encode('latin-1')
-            else:
-                body_bytes = raw_body
+    def do_POST(self):
+        try:
+            content_type = self.headers.get('Content-Type', '')
+            if 'multipart/form-data' not in content_type:
+                self._send_json({'error': 'Expected multipart/form-data'}, 400)
+                return
 
-            boundary_str = content_type.split('boundary=')[1].strip()
-            boundary = boundary_str.encode('utf-8')
-            parts = body_bytes.split(b'--' + boundary)
+            length = int(self.headers.get('Content-Length', 0))
+            raw = self.rfile.read(length)
+
+            boundary = content_type.split('boundary=')[1].strip().encode('utf-8')
+            parts = raw.split(b'--' + boundary)
             file_bytes = None
             sep = bytes([13, 10, 13, 10])
             sep_lf = bytes([10, 10])
@@ -49,30 +42,27 @@ def handler(request):
                         break
 
             if not file_bytes:
-                return {
-                    'statusCode': 400,
-                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                    'body': json.dumps({'error': 'No file found in upload'})
-                }
+                self._send_json({'error': 'No file found in upload'}, 400)
+                return
 
             data = roster_engine.parse_excel_roster(file_bytes)
-            return {
-                'statusCode': 200,
-                'headers': {
-                    'Content-Type': 'application/json; charset=utf-8',
-                    'Access-Control-Allow-Origin': '*'
-                },
-                'body': json.dumps(data, ensure_ascii=False)
-            }
-        else:
-            return {
-                'statusCode': 400,
-                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-                'body': json.dumps({'error': 'Expected multipart/form-data'})
-            }
-    except Exception as e:
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
-            'body': json.dumps({'error': f'Import error: {str(e)}'})
-        }
+            self._send_json(data)
+        except Exception as e:
+            self._send_json({'error': f'Import error: {str(e)}'}, 500)
+
+    def _cors(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+
+    def _send_json(self, obj, status=200):
+        body = json.dumps(obj, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self._cors()
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):
+        pass
