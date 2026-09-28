@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+Nurse_Roster_W6A_App.zip
+*.zip
+.env
+*.log

@@ -1,0 +1,337 @@
+/* Nurse Roster 12h - World-Class Healthcare UI & Glassmorphism Design */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Prompt:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-display: 'Plus Jakarta Sans', 'Prompt', -apple-system, sans-serif;
+  --primary-50: #eff6ff;
+  --primary-100: #dbeafe;
+  --primary-500: #0ea5e9;
+  --primary-600: #0284c7;
+  --primary-700: #0369a1;
+  --surface-card: rgba(255, 255, 255, 0.85);
+  --surface-border: rgba(226, 232, 240, 0.8);
+  --glass-shadow: 0 10px 30px -5px rgba(14, 165, 233, 0.07), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+}
+
+body {
+  font-family: var(--font-display);
+  background: linear-gradient(135deg, #f0f7ff 0%, #f8fafc 50%, #f1f5f9 100%);
+  color: #0f172a;
+  min-height: 100vh;
+}
+
+/* Glass Floating Cards */
+.glass-card {
+  background: var(--surface-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: 1.25rem;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  box-shadow: 0 16px 36px -4px rgba(14, 165, 233, 0.12), 0 10px 14px -6px rgba(15, 23, 42, 0.05);
+  transform: translateY(-2px);
+}
+
+/* Floating Top KPI Bar */
+.kpi-chip {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+
+.kpi-chip:hover {
+  background: #ffffff;
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+/* Floating Dock Toolbar */
+.floating-dock {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 12px 32px -4px rgba(15, 23, 42, 0.08);
+  border-radius: 1rem;
+}
+
+/* Table Container & Aesthetics */
+.table-container {
+  overflow: auto;
+  max-height: calc(100vh - 270px);
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+}
+
+/* Sticky Headers with Glass Effect */
+.sticky-top-1 {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: rgba(248, 250, 252, 0.96) !important;
+  backdrop-filter: blur(8px);
+}
+
+.sticky-top-2 {
+  position: sticky;
+  top: 36px;
+  z-index: 30;
+  background: rgba(241, 245, 249, 0.96) !important;
+  backdrop-filter: blur(8px);
+}
+
+.sticky-left-1 { position: sticky; left: 0; z-index: 20; }
+.sticky-left-2 { position: sticky; left: 44px; z-index: 20; }
+.sticky-left-3 { position: sticky; left: 110px; z-index: 20; }
+
+thead th.sticky-left-1,
+thead th.sticky-left-2,
+thead th.sticky-left-3 {
+  z-index: 40 !important;
+}
+
+/* Shift Cell Refined Typography & Animation */
+.shift-cell {
+  position: relative;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  cursor: pointer;
+  min-width: 40px;
+  height: 40px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: -0.01em;
+}
+
+.shift-cell:hover {
+  outline: 2px solid #0284c7;
+  z-index: 15;
+  transform: scale(1.12);
+  border-radius: 0.375rem;
+  box-shadow: 0 6px 14px -2px rgba(2, 132, 199, 0.25);
+}
+
+/* Shift Color Styles (Refined Palette) */
+.shift-C4 {
+  background: linear-gradient(180deg, #fefce8 0%, #fef3c7 100%) !important;
+  color: #92400e !important;
+  border-color: #fde68a !important;
+}
+
+.shift-P4 {
+  background: linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%) !important;
+  color: #3730a3 !important;
+  border-color: #c7d2fe !important;
+}
+
+.shift-CK {
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%) !important;
+  color: #9a3412 !important;
+  border-color: #fed7aa !important;
+}
+
+.shift-X {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+  border-color: #e2e8f0 !important;
+}
+
+.shift-off, .shift-- {
+  background: #ffffff !important;
+  color: #94a3b8 !important;
+  border-color: #e2e8f0 !important;
+}
+
+.shift-V {
+  background: linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%) !important;
+  color: #166534 !important;
+  border-color: #bbf7d0 !important;
+}
+
+.shift-HBD {
+  background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%) !important;
+  color: #9f1239 !important;
+  border-color: #fecdd3 !important;
+}
+
+.shift-LK {
+  background: linear-gradient(180deg, #fefce8 0%, #fef9c3 100%) !important;
+  color: #854d0e !important;
+  border-color: #fef08a !important;
+}
+
+.shift-LP {
+  background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%) !important;
+  color: #991b1b !important;
+  border-color: #fecaca !important;
+}
+
+.shift-TRAIN, .shift-c {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
+  color: #334155 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Locked Indicator Dot */
+.cell-locked::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 0 0 1px #ffffff;
+}
+
+/* Violation Badges */
+.cell-violation {
+  outline: 2px solid #ef4444 !important;
+  animation: pulse-border 1.8s infinite;
+  border-radius: 0.25rem;
+}
+
+@keyframes pulse-border {
+  0% { outline-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { outline-color: #f87171; box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { outline-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.cell-violation::before {
+  content: "!";
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 10px;
+  font-weight: 900;
+  color: #dc2626;
+  line-height: 1;
+}
+
+/* Palette Buttons */
+.palette-btn {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0.5rem;
+}
+
+.palette-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px -1px rgba(0, 0, 0, 0.1);
+}
+
+.palette-btn.active {
+  transform: translateY(-2px) scale(1.04);
+  box-shadow: 0 6px 16px -2px rgba(2, 132, 199, 0.35);
+  border-width: 2px;
+}
+
+/* Seniority Badges */
+.badge-senior {
+  background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+  color: #6b21a8;
+  border: 1px solid #c084fc;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  box-shadow: 0 1px 2px rgba(107, 33, 168, 0.1);
+}
+
+.badge-rn2 {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  color: #0369a1;
+  border: 1px solid #7dd3fc;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 9999px;
+}
+
+/* Crosshair Highlight */
+tr.crosshair-row {
+  background-color: rgba(224, 242, 254, 0.45) !important;
+}
+
+td.crosshair-col, th.crosshair-col {
+  background-color: rgba(224, 242, 254, 0.4) !important;
+}
+
+/* Dark Mode Overrides */
+body.dark {
+  background: linear-gradient(135deg, #0b1120 0%, #0f172a 50%, #1e293b 100%);
+  color: #f1f5f9;
+}
+
+body.dark .glass-card,
+body.dark .floating-dock {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(51, 65, 85, 0.8);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.3);
+}
+
+body.dark .bg-white {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+}
+
+body.dark .table-container {
+  background-color: #1e293b;
+  border-color: #334155;
+}
+
+body.dark .sticky-top-1 { background: rgba(30, 41, 59, 0.96) !important; }
+body.dark .sticky-top-2 { background: rgba(15, 23, 42, 0.96) !important; }
+
+body.dark .shift-X {
+  background: #334155 !important;
+  color: #cbd5e1 !important;
+  border-color: #475569 !important;
+}
+
+body.dark .shift-off, body.dark .shift-- {
+  background: #1e293b !important;
+  color: #64748b !important;
+  border-color: #334155 !important;
+}
+
+body.dark tr.crosshair-row {
+  background-color: rgba(56, 189, 248, 0.12) !important;
+}
+
+body.dark td.crosshair-col, body.dark th.crosshair-col {
+  background-color: rgba(56, 189, 248, 0.12) !important;
+}
+
+/* Print Styles */
+@media print {
+  header, .toolbar, .floating-dock, .glass-card-summary, .print-hide, #tail-panel, #rules-modal, #validation-modal, #nurse-modal, #request-modal, #toast {
+    display: none !important;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .table-container {
+    max-height: none !important;
+    overflow: visible !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+}
