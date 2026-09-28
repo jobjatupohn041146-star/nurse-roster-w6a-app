@@ -71,40 +71,92 @@ function setupGlobalEvents() {
 }
 
 // Fetch Initial Ward Data
+// ─── Demo data for GitHub Pages (no Python backend) ───────────────────────
+const DEMO_DATA = {
+  ward: 'W6A', month: 'ตุลาคม', year: '2569',
+  days: Array.from({ length: 31 }, (_, i) => i + 1),
+  weekdays: ['พฤ','ศ','ส','อา','จ','อ','พ','พฤ','ศ','ส','อา','จ','อ','พ',
+             'พฤ','ศ','ส','อา','จ','อ','พ','พฤ','ศ','ส','อา','จ','อ','พ','พฤ','ศ','ส'],
+  default_tail: { 'ฐานียา แสงงาม': ['C4','C4','P4','-'], 'ปิยาภรณ์ ดาราศร': ['X','X','C4','C4'] },
+  nurses: [
+    { code:'N01', name:'ฐานียา แสงงาม',    level:'Senior RN', fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+    { code:'N02', name:'ปิยาภรณ์ ดาราศร',  level:'Senior RN', fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+    { code:'N03', name:'สุภาพร ใจดี',       level:'RN2',       fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+    { code:'N04', name:'วราภรณ์ มานะ',      level:'RN2',       fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+    { code:'N05', name:'อรจิรา จิตราช',     level:'RN2',       fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+    { code:'N06', name:'กนกวรรณ สมหวัง',   level:'RN2',       fn_nf:'N', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+    { code:'N07', name:'นภาพร รักษ์ดี',    level:'RN2',       fn_nf:'N', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+    { code:'N08', name:'ชลธิชา บุญมาก',    level:'Senior RN', fn_nf:'N', grid: Array(31).fill(null), locked: Array(31).fill(false) },
+  ]
+};
+
+// Detect GitHub Pages — no Python backend available
+const IS_GITHUB_PAGES = window.location.hostname.endsWith('.github.io') ||
+                        window.location.hostname === 'localhost' && window.location.port === '';
+
 async function fetchInitialData() {
   try {
-    const res = await fetch('/api/initial');
-    if (!res.ok) throw new Error('Cannot load initial data');
-    const data = await res.json();
+    const res = await fetch('/api/initial', { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error('API not available');
+    const text = await res.text();
+    // Guard: if server returns HTML (e.g. Vercel 404 page), treat as error
+    if (text.trim().startsWith('<')) throw new Error('Server returned HTML, not JSON');
+    const data = JSON.parse(text);
 
-    state.ward = data.ward || 'W6A';
-    state.month = data.month || 'ตุลาคม';
-    state.year = data.year || '2569';
-    state.days = data.days || Array.from({ length: 31 }, (_, i) => i + 1);
-    state.weekdays = data.weekdays || [];
-    state.nurses = data.nurses || [];
-    state.tailShifts = data.default_tail || {};
-
-    // Ensure locked array exists
-    state.nurses.forEach(n => {
-      if (!n.locked) {
-        n.locked = n.grid.map(c => c !== null);
-      }
-    });
-
-    document.getElementById('ward-badge').textContent = `แผนก ${state.ward}`;
-    document.getElementById('roster-month-year').textContent = `${state.month} ${state.year}`;
-
-    renderTable();
-    renderTailInputs();
-    validateRoster();
-    selectPalette('C4');
+    applyRosterData(data);
 
   } catch (err) {
-    console.error(err);
-    showToast('เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + err.message, true);
+    console.warn('Backend unavailable, switching to Demo Mode:', err.message);
+    showDemoBanner();
+    applyRosterData(DEMO_DATA);
   }
 }
+
+function showDemoBanner() {
+  const banner = document.createElement('div');
+  banner.id = 'demo-banner';
+  banner.style.cssText = `
+    position:fixed; top:0; left:0; right:0; z-index:9999;
+    background:linear-gradient(90deg,#f59e0b,#ef4444);
+    color:#fff; font-weight:700; font-size:13px;
+    text-align:center; padding:6px 12px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    font-family:'Prompt',sans-serif;
+  `;
+  banner.innerHTML = `
+    <i class="fa-solid fa-flask"></i>
+    โหมดสาธิต (Demo) — ข้อมูลตัวอย่าง ปุ่ม AI Solver ต้องใช้งานผ่าน Railway
+    <a href="https://github.com/jobjatupohn041146-star/nurse-roster-w6a-app" target="_blank"
+       style="color:#fff;text-decoration:underline;margin-left:8px">ดูวิธี Deploy</a>
+  `;
+  document.body.prepend(banner);
+  // Push content down
+  document.body.style.paddingTop = '32px';
+}
+
+function applyRosterData(data) {
+  state.ward = data.ward || 'W6A';
+  state.month = data.month || 'ตุลาคม';
+  state.year = data.year || '2569';
+  state.days = data.days || Array.from({ length: 31 }, (_, i) => i + 1);
+  state.weekdays = data.weekdays || [];
+  state.nurses = data.nurses || [];
+  state.tailShifts = data.default_tail || {};
+
+  // Ensure locked array exists
+  state.nurses.forEach(n => {
+    if (!n.locked) n.locked = n.grid.map(c => c !== null);
+  });
+
+  document.getElementById('ward-badge').textContent = `แผนก ${state.ward}`;
+  document.getElementById('roster-month-year').textContent = `${state.month} ${state.year}`;
+
+  renderTable();
+  renderTailInputs();
+  validateRoster();
+  selectPalette('C4');
+}
+
 
 // Render Main Table
 function renderTable() {
@@ -775,15 +827,21 @@ async function validateRoster() {
     const res = await fetch('/api/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(4000)
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    if (text.trim().startsWith('<')) return; // HTML = no backend
+    const data = JSON.parse(text);
     state.violations = data.violations || [];
     updateValidationUI();
 
   } catch (err) {
-    console.error('Validation error:', err);
+    // silently ignore in demo mode — no backend available
+    console.debug('Validate skipped (demo mode):', err.message);
+    state.violations = [];
+    updateValidationUI();
   }
 }
 
