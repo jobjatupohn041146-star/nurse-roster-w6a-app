@@ -14,7 +14,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import roster_engine
 
-PORT = 8000
+PORT = int(os.environ.get('PORT', 8000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, 'static')
 SAMPLE_EXCEL_PATH = os.path.join(BASE_DIR, 'ตัวอย่างผลจัดเวร_ตค69.xlsx')
@@ -281,5 +281,6 @@ def run_server(port=PORT):
         server.server_close()
 
 if __name__ == '__main__':
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else PORT
+    port = int(os.environ.get('PORT', sys.argv[1] if len(sys.argv) > 1 else 8000))
     run_server(port)
+

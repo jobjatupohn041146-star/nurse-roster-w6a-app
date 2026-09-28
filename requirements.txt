@@ -1,2 +1,2 @@
-ortools
-openpyxl
+ortools>=9.8
+openpyxl>=3.1

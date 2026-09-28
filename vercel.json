@@ -1,6 +1,3 @@
 {
-  "rewrites": [
-    { "source": "/api/import", "destination": "/api/import_excel" },
-    { "source": "/api/nurse-ics", "destination": "/api/nurse_ics" }
-  ]
+  "comment": "This project is hosted on Railway (railway.app), not Vercel. Vercel does not support heavy Python packages like ortools. See README.md for deployment instructions."
 }
