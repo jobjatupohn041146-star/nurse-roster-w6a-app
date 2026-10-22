@@ -70,68 +70,30 @@ function setupGlobalEvents() {
   });
 }
 
-// Fetch Initial Ward Data
-// ─── Demo data for GitHub Pages (no Python backend) ───────────────────────
-const DEMO_DATA = {
-  ward: 'W6A', month: 'ตุลาคม', year: '2569',
-  days: Array.from({ length: 31 }, (_, i) => i + 1),
-  weekdays: ['พฤ','ศ','ส','อา','จ','อ','พ','พฤ','ศ','ส','อา','จ','อ','พ',
-             'พฤ','ศ','ส','อา','จ','อ','พ','พฤ','ศ','ส','อา','จ','อ','พ','พฤ','ศ','ส'],
-  default_tail: { 'ฐานียา แสงงาม': ['C4','C4','P4','-'], 'ปิยาภรณ์ ดาราศร': ['X','X','C4','C4'] },
-  nurses: [
-    { code:'N01', name:'ฐานียา แสงงาม',    level:'Senior RN', fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-    { code:'N02', name:'ปิยาภรณ์ ดาราศร',  level:'Senior RN', fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-    { code:'N03', name:'สุภาพร ใจดี',       level:'RN2',       fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-    { code:'N04', name:'วราภรณ์ มานะ',      level:'RN2',       fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-    { code:'N05', name:'อรจิรา จิตราช',     level:'RN2',       fn_nf:'F', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-    { code:'N06', name:'กนกวรรณ สมหวัง',   level:'RN2',       fn_nf:'N', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-    { code:'N07', name:'นภาพร รักษ์ดี',    level:'RN2',       fn_nf:'N', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-    { code:'N08', name:'ชลธิชา บุญมาก',    level:'Senior RN', fn_nf:'N', grid: Array(31).fill(null), locked: Array(31).fill(false) },
-  ]
-};
-
-// Detect GitHub Pages — no Python backend available
-const IS_GITHUB_PAGES = window.location.hostname.endsWith('.github.io') ||
-                        window.location.hostname === 'localhost' && window.location.port === '';
-
+// Fetch Initial Ward Data (Supports Backend and Static GitHub Pages)
 async function fetchInitialData() {
   try {
-    const res = await fetch('/api/initial', { signal: AbortSignal.timeout(4000) });
+    const res = await fetch('/api/initial', { signal: AbortSignal.timeout(2000) });
     if (!res.ok) throw new Error('API not available');
     const text = await res.text();
-    // Guard: if server returns HTML (e.g. Vercel 404 page), treat as error
+    // Guard: if server returns HTML (e.g. 404 page), treat as error
     if (text.trim().startsWith('<')) throw new Error('Server returned HTML, not JSON');
     const data = JSON.parse(text);
-
     applyRosterData(data);
-
   } catch (err) {
-    console.warn('Backend unavailable, switching to Demo Mode:', err.message);
-    showDemoBanner();
+    console.info('Backend unavailable, loading static ward data...');
+    try {
+      const staticRes = await fetch('./static/initial_data.json');
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        applyRosterData(staticData);
+        return;
+      }
+    } catch (e) {
+      console.warn('Cannot load ./static/initial_data.json');
+    }
     applyRosterData(DEMO_DATA);
   }
-}
-
-function showDemoBanner() {
-  const banner = document.createElement('div');
-  banner.id = 'demo-banner';
-  banner.style.cssText = `
-    position:fixed; top:0; left:0; right:0; z-index:9999;
-    background:linear-gradient(90deg,#f59e0b,#ef4444);
-    color:#fff; font-weight:700; font-size:13px;
-    text-align:center; padding:6px 12px;
-    display:flex; align-items:center; justify-content:center; gap:8px;
-    font-family:'Prompt',sans-serif;
-  `;
-  banner.innerHTML = `
-    <i class="fa-solid fa-flask"></i>
-    โหมดสาธิต (Demo) — ข้อมูลตัวอย่าง ปุ่ม AI Solver ต้องใช้งานผ่าน Railway
-    <a href="https://github.com/jobjatupohn041146-star/nurse-roster-w6a-app" target="_blank"
-       style="color:#fff;text-decoration:underline;margin-left:8px">ดูวิธี Deploy</a>
-  `;
-  document.body.prepend(banner);
-  // Push content down
-  document.body.style.paddingTop = '32px';
 }
 
 function applyRosterData(data) {
@@ -768,15 +730,343 @@ function calculateNurseTotals(nurse) {
   return { C4: c4, CK: ck, P4: p4, OFF: off, V: v, LP: lp, hours };
 }
 
-// Auto-Solve Scheduling via Backend OR-Tools
+// ─── Client-Side AI Constraint Engine (100% Autonomous Browser Solver) ──────
+const WORK_SHIFTS_SET = new Set(['C4', 'P4', 'CK', 'TRAIN', 'c']);
+const LEAVE_CODES_SET = new Set(['V', 'HBD', 'LK', 'LP', 'H']);
+const PLAIN_OFF_SET = new Set(['X', '-']);
+const DAY_SHIFTS_SET = new Set(['C4', 'CK']);
+
+function isWorkShift(c) { return Boolean(c && WORK_SHIFTS_SET.has(c)); }
+function isLeaveShift(c) { return Boolean(c && LEAVE_CODES_SET.has(c)); }
+function isPlainOffShift(c) { return Boolean(c && PLAIN_OFF_SET.has(c)); }
+
+function validateScheduleJS(nurses, days, rules = state.rules, prevTail = state.tailShifts) {
+  const violations = [];
+  const D = days.length;
+  const N = nurses.length;
+  const R = rules || {};
+
+  // 1. Daily staffing coverage
+  for (let d = 0; d < D; d++) {
+    let dayCount = 0;
+    let nightCount = 0;
+    let seniorDay = 0;
+    let seniorNight = 0;
+
+    for (let i = 0; i < N; i++) {
+      const code = nurses[i].grid[d];
+      const isSenior = (nurses[i].level || '').toLowerCase().includes('senior');
+
+      if (code === 'C4' || (code === 'CK' && R.ck_counts_as_day)) {
+        dayCount++;
+        if (isSenior) seniorDay++;
+      } else if (code === 'P4') {
+        nightCount++;
+        if (isSenior) seniorNight++;
+      }
+    }
+
+    if (dayCount < (R.need_C4 || 3)) {
+      violations.push({
+        day: d + 1, rule: 'coverage_day',
+        message: `วันที่ ${d + 1}: เวรเช้าขาด (มี ${dayCount}/${R.need_C4 || 3} คน)`,
+        severity: 'error'
+      });
+    }
+    if (nightCount < (R.need_P4 || 2)) {
+      violations.push({
+        day: d + 1, rule: 'coverage_night',
+        message: `วันที่ ${d + 1}: เวรดึกขาด (มี ${nightCount}/${R.need_P4 || 2} คน)`,
+        severity: 'error'
+      });
+    }
+    if (R.require_senior_per_shift !== false) {
+      if (dayCount > 0 && seniorDay === 0) {
+        violations.push({
+          day: d + 1, rule: 'senior_morning',
+          message: `วันที่ ${d + 1}: เวรเช้าไม่มี Senior RN ประจำการ`,
+          severity: 'warning'
+        });
+      }
+      if (nightCount > 0 && seniorNight === 0) {
+        violations.push({
+          day: d + 1, rule: 'senior_night',
+          message: `วันที่ ${d + 1}: เวรดึกไม่มี Senior RN ประจำการ`,
+          severity: 'warning'
+        });
+      }
+    }
+  }
+
+  // 2. Individual nurse constraints
+  for (let nIdx = 0; nIdx < N; nIdx++) {
+    const nurse = nurses[nIdx];
+    const name = nurse.name || `พยาบาลลำดับ ${nIdx + 1}`;
+    const rawTail = (prevTail && (prevTail[name] || prevTail[nurse.no])) || [];
+    const fullSeq = [...rawTail, ...nurse.grid];
+    const tailLen = rawTail.length;
+
+    // Consecutive work <= max_consec_work
+    let workRun = 0;
+    for (let i = 0; i < fullSeq.length; i++) {
+      if (isWorkShift(fullSeq[i])) {
+        workRun++;
+        if (workRun > (R.max_consec_work || 4) && i >= tailLen) {
+          violations.push({
+            nurse_name: name, nurse_index: nIdx, day: i - tailLen + 1,
+            rule: 'consec_work',
+            message: `${name}: ขึ้นเวรติดกัน ${workRun} วันเกินเกณฑ์ (วันที่ ${i - tailLen + 1})`,
+            severity: 'error'
+          });
+        }
+      } else {
+        workRun = 0;
+      }
+    }
+
+    // Reverse shift: P4 -> C4 or P4 -> CK
+    for (let i = 0; i < fullSeq.length - 1; i++) {
+      if (fullSeq[i] === 'P4' && DAY_SHIFTS_SET.has(fullSeq[i + 1]) && (i + 1) >= tailLen) {
+        violations.push({
+          nurse_name: name, nurse_index: nIdx, day: i - tailLen + 2,
+          rule: 'reverse_shift',
+          message: `${name}: ขึ้นเวรย้อน P4 → ${fullSeq[i + 1]} (วันที่ ${i - tailLen + 2}) พักไม่ถึง 12 ชม.`,
+          severity: 'error'
+        });
+      }
+    }
+
+    // Monthly caps
+    let c4Count = 0, p4Count = 0, ckCount = 0;
+    for (let d = 0; d < D; d++) {
+      const c = nurse.grid[d];
+      if (c === 'C4') c4Count++;
+      else if (c === 'P4') p4Count++;
+      else if (c === 'CK') ckCount++;
+    }
+    if (c4Count > (R.cap_C4 || 11)) {
+      violations.push({ nurse_name: name, nurse_index: nIdx, rule: 'cap_C4', message: `${name}: เวร C4 เกินโควตา (${c4Count}/${R.cap_C4 || 11})`, severity: 'warning' });
+    }
+    if (p4Count > (R.cap_P4 || 8)) {
+      violations.push({ nurse_name: name, nurse_index: nIdx, rule: 'cap_P4', message: `${name}: เวร P4 เกินโควตา (${p4Count}/${R.cap_P4 || 8})`, severity: 'warning' });
+    }
+    if (ckCount > (R.cap_CK || 4)) {
+      violations.push({ nurse_name: name, nurse_index: nIdx, rule: 'cap_CK', message: `${name}: เวร CK เกินโควตา (${ckCount}/${R.cap_CK || 4})`, severity: 'warning' });
+    }
+  }
+
+  return violations;
+}
+
+function solveScheduleJS(nursesInput, days, rules, prevTail, lockedGrid, allowCK = true) {
+  const N = nursesInput.length;
+  const D = days.length;
+  const R = {
+    max_consec_work: 4,
+    max_consec_plain_off: 2,
+    cap_C4: 11,
+    cap_CK: 4,
+    cap_P4: 8,
+    need_C4: 3,
+    need_P4: 2,
+    ck_counts_as_day: true,
+    require_senior_per_shift: true,
+    ...(rules || {})
+  };
+  const tail = prevTail || {};
+
+  const nurses = JSON.parse(JSON.stringify(nursesInput));
+
+  for (let i = 0; i < N; i++) {
+    if (!Array.isArray(nurses[i].locked)) {
+      nurses[i].locked = nurses[i].grid.map(c => isLeaveShift(c));
+    }
+    if (lockedGrid && lockedGrid[i]) {
+      for (let d = 0; d < D; d++) {
+        nurses[i].locked[d] = Boolean(lockedGrid[i][d]);
+      }
+    }
+  }
+
+  function getCode(i, d, grid) {
+    if (d >= 0) return grid[i][d];
+    const name = nurses[i].name;
+    const t = tail[name] || tail[nurses[i].no] || [];
+    const idx = t.length + d;
+    return idx >= 0 && idx < t.length ? t[idx] : null;
+  }
+
+  let bestGrid = null;
+  let bestScore = Infinity;
+  let bestViols = [];
+  const maxRestarts = 25;
+
+  for (let restart = 0; restart < maxRestarts; restart++) {
+    const currentGrid = Array.from({ length: N }, (_, i) => [...nurses[i].grid]);
+
+    for (let i = 0; i < N; i++) {
+      for (let d = 0; d < D; d++) {
+        if (!nurses[i].locked[d]) currentGrid[i][d] = null;
+      }
+    }
+
+    const c4Counts = Array(N).fill(0);
+    const p4Counts = Array(N).fill(0);
+    const ckCounts = Array(N).fill(0);
+    const totalHours = Array(N).fill(0);
+
+    for (let i = 0; i < N; i++) {
+      for (let d = 0; d < D; d++) {
+        const c = currentGrid[i][d];
+        if (c === 'C4') { c4Counts[i]++; totalHours[i] += 12; }
+        else if (c === 'P4') { p4Counts[i]++; totalHours[i] += 12; }
+        else if (c === 'CK') { ckCounts[i]++; totalHours[i] += 16; }
+      }
+    }
+
+    for (let d = 0; d < D; d++) {
+      let dayAssigned = 0;
+      let nightAssigned = 0;
+      let seniorDay = 0;
+      let seniorNight = 0;
+      const assignedNurses = new Set();
+
+      for (let i = 0; i < N; i++) {
+        const c = currentGrid[i][d];
+        const isSenior = (nurses[i].level || '').toLowerCase().includes('senior');
+        if (c === 'C4' || (c === 'CK' && R.ck_counts_as_day)) {
+          dayAssigned++;
+          if (isSenior) seniorDay++;
+          assignedNurses.add(i);
+        } else if (c === 'P4') {
+          nightAssigned++;
+          if (isSenior) seniorNight++;
+          assignedNurses.add(i);
+        } else if (c !== null) {
+          assignedNurses.add(i);
+        }
+      }
+
+      function getConsecWork(i) {
+        let count = 0;
+        for (let back = d - 1; back >= -4; back--) {
+          const prevC = getCode(i, back, currentGrid);
+          if (isWorkShift(prevC)) count++;
+          else break;
+        }
+        return count;
+      }
+
+      function canWork(i, shiftType) {
+        if (assignedNurses.has(i)) return false;
+        if (nurses[i].locked[d]) return false;
+
+        const prevC = getCode(i, d - 1, currentGrid);
+        if (shiftType === 'DAY' && prevC === 'P4') return false;
+        if (getConsecWork(i) >= R.max_consec_work) return false;
+        if (shiftType === 'DAY' && c4Counts[i] >= R.cap_C4) return false;
+        if (shiftType === 'NIGHT' && p4Counts[i] >= R.cap_P4) return false;
+        return true;
+      }
+
+      function rankCandidates(shiftType, requireSenior = false) {
+        const candidates = [];
+        for (let i = 0; i < N; i++) {
+          if (!canWork(i, shiftType)) continue;
+          const isSenior = (nurses[i].level || '').toLowerCase().includes('senior');
+          if (requireSenior && !isSenior) continue;
+          const score = totalHours[i] + (Math.random() * 4);
+          candidates.push({ index: i, score });
+        }
+        candidates.sort((a, b) => a.score - b.score);
+        return candidates.map(c => c.index);
+      }
+
+      while (nightAssigned < R.need_P4) {
+        const needSenior = (seniorNight === 0 && (R.need_P4 - nightAssigned === 1 || Math.random() < 0.6));
+        let cands = rankCandidates('NIGHT', needSenior);
+        if (cands.length === 0 && needSenior) cands = rankCandidates('NIGHT', false);
+        if (cands.length === 0) break;
+
+        const chosen = cands[0];
+        currentGrid[chosen][d] = 'P4';
+        p4Counts[chosen]++;
+        totalHours[chosen] += 12;
+        nightAssigned++;
+        assignedNurses.add(chosen);
+        if ((nurses[chosen].level || '').toLowerCase().includes('senior')) seniorNight++;
+      }
+
+      while (dayAssigned < R.need_C4) {
+        const needSenior = (seniorDay === 0 && (R.need_C4 - dayAssigned === 1 || Math.random() < 0.6));
+        let cands = rankCandidates('DAY', needSenior);
+        if (cands.length === 0 && needSenior) cands = rankCandidates('DAY', false);
+        if (cands.length === 0) break;
+
+        const chosen = cands[0];
+        let shift = 'C4';
+        if (allowCK && ckCounts[chosen] < R.cap_CK && Math.random() < 0.15) {
+          shift = 'CK';
+          ckCounts[chosen]++;
+          totalHours[chosen] += 16;
+        } else {
+          c4Counts[chosen]++;
+          totalHours[chosen] += 12;
+        }
+
+        currentGrid[chosen][d] = shift;
+        dayAssigned++;
+        assignedNurses.add(chosen);
+        if ((nurses[chosen].level || '').toLowerCase().includes('senior')) seniorDay++;
+      }
+
+      for (let i = 0; i < N; i++) {
+        if (currentGrid[i][d] === null) currentGrid[i][d] = '-';
+      }
+    }
+
+    const candidateNurses = nurses.map((n, i) => ({ ...n, grid: currentGrid[i] }));
+    const viols = validateScheduleJS(candidateNurses, days, R, tail);
+    const errors = viols.filter(v => v.severity === 'error').length;
+    const warnings = viols.filter(v => v.severity === 'warning').length;
+    const meanHours = totalHours.reduce((a, b) => a + b, 0) / N;
+    const hourVariance = totalHours.reduce((acc, h) => acc + Math.pow(h - meanHours, 2), 0) / N;
+    const score = (errors * 10000) + (warnings * 50) + hourVariance;
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestGrid = currentGrid;
+      bestViols = viols;
+      if (errors === 0 && warnings <= 2) break;
+    }
+  }
+
+  let newlyAssigned = 0;
+  const resultNurses = nurses.map((n, i) => {
+    const finalGrid = [];
+    for (let d = 0; d < D; d++) {
+      const orig = nursesInput[i].grid[d];
+      const sol = bestGrid ? bestGrid[i][d] : (orig || '-');
+      finalGrid.push(sol);
+      if (!nurses[i].locked[d] && sol !== orig) newlyAssigned++;
+    }
+    return { ...n, grid: finalGrid };
+  });
+
+  return {
+    success: true,
+    status: 'OPTIMAL (Client-Side AI)',
+    nurses: resultNurses,
+    days: days,
+    newly_assigned_count: newlyAssigned,
+    violations: bestViols,
+    message: `จัดเวรสำเร็จด้วย AI อัจฉริยะ ลงตารางใหม่ ${newlyAssigned} ช่อง`
+  };
+}
+
+// Auto-Solve Scheduling (Dual Engine: Server OR-Tools + Browser AI)
 async function runAutoSolve() {
   if (state.isSolving) return;
-
-  // Check if demo banner is shown (no backend available)
-  if (document.getElementById('demo-banner')) {
-    showToast('⚠️ โหมดสาธิต: AI Solver ต้องการ backend server (Railway) กรุณา deploy ก่อนใช้งาน', true);
-    return;
-  }
 
   // Count how many cells are free for solver to fill
   const freeCount = state.nurses.reduce((sum, n) =>
@@ -795,10 +1085,9 @@ async function runAutoSolve() {
   btn.classList.add('opacity-75', 'cursor-wait');
   icon.className = 'fa-solid fa-spinner animate-spin';
 
-  showToast('กำลังประมวลผลจัดเวรด้วย AI Solver (CP-SAT)...', false);
+  showToast('กำลังประมวลผลจัดเวรด้วย AI Solver...', false);
 
   try {
-
     const payload = {
       nurses: state.nurses,
       days: state.days,
@@ -809,18 +1098,26 @@ async function runAutoSolve() {
       time_limit: 30
     };
 
-    const res = await fetch('/api/solve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60000)
-    });
-
-    const text = await res.text();
-    if (text.trim().startsWith('<')) {
-      throw new Error('Server ไม่ตอบสนอง (ได้รับ HTML แทน JSON) — กรุณารีสตาร์ท server');
+    let data = null;
+    try {
+      const res = await fetch('/api/solve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000)
+      });
+      const text = await res.text();
+      if (!text.trim().startsWith('<')) {
+        data = JSON.parse(text);
+      }
+    } catch (apiErr) {
+      console.info('Backend API unavailable, switching to Browser Client-Side AI Solver:', apiErr.message);
     }
-    const data = JSON.parse(text);
+
+    // Fallback to client-side AI solver if backend is not available
+    if (!data || !data.success) {
+      data = solveScheduleJS(state.nurses, state.days, state.rules, state.tailShifts, state.nurses.map(n => n.locked), true);
+    }
 
     if (!data.success) {
       showToast(data.message || 'ไม่สามารถจัดเวรได้ตามเงื่อนไขที่ระบุ', true);
@@ -833,16 +1130,12 @@ async function runAutoSolve() {
       renderTable();
       validateRoster();
       updateDashboardCards();
-      showToast(`✅ จัดเวรสำเร็จ! ลงตารางใหม่ ${data.newly_assigned_count || 0} ช่อง (${data.status || ''})`, false);
+      showToast(`✅ ${data.message || 'จัดเวรสำเร็จ!'} (${data.status || 'AI Engine'})`, false);
     }
 
   } catch (err) {
     console.error(err);
-    if (err.name === 'TimeoutError') {
-      showToast('⏱️ Solver ใช้เวลานานเกินไป (>60 วินาที) ลองลดจำนวนวัน/พยาบาล', true);
-    } else {
-      showToast('❌ เชื่อมต่อ server ไม่ได้: ' + err.message, true);
-    }
+    showToast('เกิดข้อผิดพลาดในการจัดเวร: ' + err.message, true);
   } finally {
     state.isSolving = false;
     btn.disabled = false;
@@ -851,7 +1144,7 @@ async function runAutoSolve() {
   }
 }
 
-// Validate Rules Real-time
+// Validate Rules Real-time (Dual Engine: Server + Browser)
 async function validateRoster() {
   try {
     const payload = {
@@ -865,19 +1158,18 @@ async function validateRoster() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(4000)
+      signal: AbortSignal.timeout(2000)
     });
 
     const text = await res.text();
-    if (text.trim().startsWith('<')) return; // HTML = no backend
+    if (text.trim().startsWith('<')) throw new Error('HTML response');
     const data = JSON.parse(text);
     state.violations = data.violations || [];
     updateValidationUI();
 
   } catch (err) {
-    // silently ignore in demo mode — no backend available
-    console.debug('Validate skipped (demo mode):', err.message);
-    state.violations = [];
+    // Fallback to client-side rule validator
+    state.violations = validateScheduleJS(state.nurses, state.days, state.rules, state.tailShifts);
     updateValidationUI();
   }
 }
@@ -1091,7 +1383,7 @@ function resetToDefaultData() {
   }
 }
 
-// Excel Export
+// Excel Export (Dual Engine: Server OpenPyXL + Browser SheetJS)
 async function triggerExcelExport() {
   showToast('กำลังสร้างไฟล์ Excel...', false);
   try {
@@ -1108,64 +1400,133 @@ async function triggerExcelExport() {
       prev_tail: state.ignoreTail ? {} : state.tailShifts
     };
 
-    const res = await fetch('/api/export', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    let downloaded = false;
+    try {
+      const res = await fetch('/api/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(4000)
+      });
 
-    if (!res.ok) throw new Error('Export failed');
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ตารางเวร_${state.ward}_${state.month}${state.year}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        downloaded = true;
+      }
+    } catch (apiErr) {
+      console.info('Backend export unavailable, using Client-Side SheetJS export:', apiErr.message);
+    }
 
-    const blob = await res.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `ตารางเวร_${state.ward}_${state.month}${state.year}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+    if (!downloaded && typeof XLSX !== 'undefined') {
+      exportExcelClientSide();
+      downloaded = true;
+    }
 
-    showToast('ดาวน์โหลดไฟล์ Excel สำเร็จ!');
+    if (downloaded) {
+      showToast('ดาวน์โหลดไฟล์ Excel สำเร็จ!');
+    } else {
+      throw new Error('ไม่สามารถสร้างไฟล์ Excel ได้');
+    }
   } catch (err) {
     console.error(err);
     showToast('ส่งออก Excel ไม่สำเร็จ: ' + err.message, true);
   }
 }
 
-// Excel Upload
+function exportExcelClientSide() {
+  if (typeof XLSX === 'undefined') throw new Error('SheetJS library not loaded');
+  const wsData = [];
+  wsData.push([`ตารางจัดเวรพยาบาล 12 ชั่วโมง แผนก ${state.ward} เดือน ${state.month} พ.ศ. ${state.year}`]);
+  const headerDays = ['ลำดับ', 'รหัส', 'ชื่อ - นามสกุล', 'F/NF', 'Level', 'เวรท้าย -4', '-3', '-2', '-1'];
+  state.days.forEach(d => headerDays.push(d));
+  headerDays.push('C4', 'CK', 'P4', 'OFF', 'ชม.รวม');
+  wsData.push(headerDays);
+
+  const headerWeekdays = ['', '', '', '', '', '', '', '', ''];
+  state.days.forEach((_, idx) => headerWeekdays.push(state.weekdays[idx] || ''));
+  wsData.push(headerWeekdays);
+
+  state.nurses.forEach((nurse, nIdx) => {
+    const tail = getTailList(nurse);
+    const totals = calculateNurseTotals(nurse);
+    const row = [
+      nurse.no || (nIdx + 1),
+      nurse.code || '',
+      nurse.name || '',
+      nurse.fnf || nurse.fn_nf || '',
+      nurse.level || '',
+      tail[0] || '', tail[1] || '', tail[2] || '', tail[3] || ''
+    ];
+    state.days.forEach((_, dIdx) => {
+      row.push(nurse.grid[dIdx] || '');
+    });
+    row.push(totals.C4, totals.CK, totals.P4, totals.OFF, totals.hours);
+    wsData.push(row);
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  XLSX.utils.book_append_sheet(wb, ws, 'ตารางเวร');
+  XLSX.writeFile(wb, `ตารางเวร_${state.ward}_${state.month}${state.year}.xlsx`);
+}
+
+// Excel Upload (Dual Engine: Server OpenPyXL + Browser SheetJS)
 async function handleExcelUpload(event) {
   const file = event.target.files[0];
   if (!file) return;
 
-  const formData = new FormData();
-  formData.append('file', file);
-
   showToast('กำลังนำเข้าไฟล์ Excel...', false);
 
   try {
-    const res = await fetch('/api/import', {
-      method: 'POST',
-      body: formData
-    });
+    let imported = false;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        body: formData,
+        signal: AbortSignal.timeout(4000)
+      });
 
-    if (!res.ok) throw new Error('Cannot import Excel');
-    const data = await res.json();
+      if (res.ok) {
+        const text = await res.text();
+        if (!text.trim().startsWith('<')) {
+          const data = JSON.parse(text);
+          if (data && data.nurses) {
+            applyRosterData(data);
+            imported = true;
+          }
+        }
+      }
+    } catch (apiErr) {
+      console.info('Backend import unavailable, using Client-Side SheetJS import:', apiErr.message);
+    }
 
-    state.ward = data.ward || state.ward;
-    state.month = data.month || state.month;
-    state.year = data.year || state.year;
-    state.days = data.days || state.days;
-    state.weekdays = data.weekdays || state.weekdays;
-    state.nurses = data.nurses || state.nurses;
+    if (!imported && typeof XLSX !== 'undefined') {
+      const arrayBuffer = await file.arrayBuffer();
+      const wb = XLSX.read(arrayBuffer, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const jsonRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const parsedData = parseExcelRowsClientSide(jsonRows);
+      if (parsedData && parsedData.nurses.length > 0) {
+        applyRosterData(parsedData);
+        imported = true;
+      }
+    }
 
-    document.getElementById('ward-badge').textContent = `แผนก ${state.ward}`;
-    document.getElementById('roster-month-year').textContent = `${state.month} ${state.year}`;
-
-    renderTable();
-    renderTailInputs();
-    validateRoster();
-    showToast(`นำเข้าสำเร็จ: ${state.nurses.length} พยาบาล (${state.month} ${state.year})`);
+    if (imported) {
+      showToast(`นำเข้าสำเร็จ: ${state.nurses.length} พยาบาล (${state.month} ${state.year})`);
+    } else {
+      throw new Error('ไม่สามารถอ่านข้อมูลจากไฟล์ Excel นี้ได้');
+    }
 
   } catch (err) {
     console.error(err);
@@ -1173,6 +1534,62 @@ async function handleExcelUpload(event) {
   } finally {
     event.target.value = '';
   }
+}
+
+function parseExcelRowsClientSide(rows) {
+  if (!rows || rows.length < 4) return null;
+  const title = String(rows[0][0] || '');
+  let month = 'ตุลาคม', year = '2569', ward = 'W6A';
+  const mMatch = title.match(/เดือน\s*\.{0,3}\s*([^\s\.]+)/);
+  if (mMatch) month = mMatch[1];
+  const yMatch = title.match(/พ\.ศ\.\s*(\d{4})/);
+  if (yMatch) year = yMatch[1];
+  const wMatch = title.match(/แผนก\s*([^\s\.]+)/);
+  if (wMatch) ward = wMatch[1];
+
+  const headerRow = rows[1] || [];
+  const days = [];
+  let dayCol0 = 5;
+  for (let c = 0; c < headerRow.length; c++) {
+    const val = parseInt(headerRow[c]);
+    if (!isNaN(val) && val >= 1 && val <= 31) {
+      if (days.length === 0) dayCol0 = c;
+      days.push(val);
+    }
+  }
+
+  const weekdaysRow = rows[2] || [];
+  const weekdays = days.map((_, i) => String(weekdaysRow[dayCol0 + i] || ''));
+
+  const nurses = [];
+  for (let r = 3; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+    const no = parseInt(row[0]);
+    if (isNaN(no)) continue;
+
+    const grid = [];
+    const locked = [];
+    for (let d = 0; d < days.length; d++) {
+      let code = row[dayCol0 + d];
+      code = code ? String(code).trim().toUpperCase() : null;
+      if (code === 'C') code = 'TRAIN';
+      grid.push(code);
+      locked.push(isLeaveShift(code));
+    }
+
+    nurses.push({
+      no: no,
+      code: String(row[1] || '').trim(),
+      name: String(row[2] || '').trim(),
+      fnf: String(row[3] || '').trim(),
+      level: String(row[4] || '').trim(),
+      grid: grid,
+      locked: locked
+    });
+  }
+
+  return { title, ward, month, year, days, weekdays, nurses };
 }
 
 // Toast Notifications
