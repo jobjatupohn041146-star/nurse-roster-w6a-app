@@ -250,7 +250,12 @@ def solve_schedule(nurses: List[Dict[str, Any]],
 
         for d in range(D):
             code = norm_code(grid[d]) if d < len(grid) else None
-            is_cell_locked = (is_locked_row[d] if is_locked_row is not None and d < len(is_locked_row) else False) or (code is not None)
+            # Trust locked_grid from frontend completely.
+            # Only auto-lock by cell value when no locked_grid was provided.
+            if is_locked_row is not None and d < len(is_locked_row):
+                is_cell_locked = bool(is_locked_row[d])
+            else:
+                is_cell_locked = (code is not None)
 
             if is_cell_locked and code is not None:
                 V[i, d] = {
@@ -426,7 +431,10 @@ def solve_schedule(nurses: List[Dict[str, Any]],
     for i in range(N):
         for d in range(D):
             current_val = new_nurses[i]['grid'][d]
-            cell_is_locked = (locked_grid[i][d] if (locked_grid and i < len(locked_grid) and d < len(locked_grid[i])) else (current_val is not None))
+            if locked_grid and i < len(locked_grid) and d < len(locked_grid[i]):
+                cell_is_locked = bool(locked_grid[i][d])
+            else:
+                cell_is_locked = (current_val is not None)
             if cell_is_locked and current_val is not None:
                 continue
 
