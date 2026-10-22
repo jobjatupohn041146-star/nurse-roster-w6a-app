@@ -143,9 +143,12 @@ function applyRosterData(data) {
   state.nurses = data.nurses || [];
   state.tailShifts = data.default_tail || {};
 
-  // Ensure locked array exists
+  // Ensure locked array exists — cells are NOT locked by default on load.
+  // Only cells explicitly locked by the user (via lock mode) should be true.
   state.nurses.forEach(n => {
-    if (!n.locked) n.locked = n.grid.map(c => c !== null);
+    if (!Array.isArray(n.locked)) {
+      n.locked = Array(n.grid.length).fill(false);
+    }
   });
 
   document.getElementById('ward-badge').textContent = `แผนก ${state.ward}`;
@@ -764,6 +767,13 @@ function calculateNurseTotals(nurse) {
 // Auto-Solve Scheduling via Backend OR-Tools
 async function runAutoSolve() {
   if (state.isSolving) return;
+
+  // Check if demo banner is shown (no backend available)
+  if (document.getElementById('demo-banner')) {
+    showToast('⚠️ โหมดสาธิต: AI Solver ต้องการ backend server (Railway) กรุณา deploy ก่อนใช้งาน', true);
+    return;
+  }
+
   state.isSolving = true;
 
   const btn = document.getElementById('btn-solve');
@@ -772,9 +782,18 @@ async function runAutoSolve() {
   btn.classList.add('opacity-75', 'cursor-wait');
   icon.className = 'fa-solid fa-spinner animate-spin';
 
-  showToast('กำลังประมวลผลจัดเวรด้วย Constraint Solver...', false);
+  showToast('กำลังประมวลผลจัดเวรด้วย AI Solver (CP-SAT)...', false);
 
   try {
+    // Count how many cells are free for solver to fill
+    const freeCount = state.nurses.reduce((sum, n) =>
+      sum + n.locked.filter(v => !v).length, 0);
+
+    if (freeCount === 0) {
+      showToast('⚠️ ทุก cell ถูกล็อกไว้ กรุณาปลดล็อกบางช่องก่อนจัดเวรอัตโนมัติ', true);
+      return;
+    }
+
     const payload = {
       nurses: state.nurses,
       days: state.days,
@@ -788,24 +807,37 @@ async function runAutoSolve() {
     const res = await fetch('/api/solve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000)
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    if (text.trim().startsWith('<')) {
+      throw new Error('Server ไม่ตอบสนอง (ได้รับ HTML แทน JSON) — กรุณารีสตาร์ท server');
+    }
+    const data = JSON.parse(text);
 
     if (!data.success) {
       showToast(data.message || 'ไม่สามารถจัดเวรได้ตามเงื่อนไขที่ระบุ', true);
       openValidationModal();
     } else {
+      // Preserve user locks from previous state
+      const prevLocks = state.nurses.map(n => n.locked);
       state.nurses = data.nurses;
+      state.nurses.forEach((n, i) => { n.locked = prevLocks[i] || []; });
       renderTable();
       validateRoster();
-      showToast(`จัดเวรสำเร็จ! ลงตารางใหม่ ${data.newly_assigned_count || 0} ช่อง`);
+      updateDashboardCards();
+      showToast(`✅ จัดเวรสำเร็จ! ลงตารางใหม่ ${data.newly_assigned_count || 0} ช่อง (${data.status || ''})`, false);
     }
 
   } catch (err) {
     console.error(err);
-    showToast('เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์: ' + err.message, true);
+    if (err.name === 'TimeoutError') {
+      showToast('⏱️ Solver ใช้เวลานานเกินไป (>60 วินาที) ลองลดจำนวนวัน/พยาบาล', true);
+    } else {
+      showToast('❌ เชื่อมต่อ server ไม่ได้: ' + err.message, true);
+    }
   } finally {
     state.isSolving = false;
     btn.disabled = false;

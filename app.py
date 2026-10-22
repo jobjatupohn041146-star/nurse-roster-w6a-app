@@ -139,6 +139,24 @@ class RosterHandler(BaseHTTPRequestHandler):
             allow_ck = body.get('allow_ck', True)
             time_limit = body.get('time_limit', 30)
 
+            # Count free cells
+            free_cells = 0
+            if locked_grid:
+                for row in locked_grid:
+                    free_cells += sum(1 for v in row if not v)
+            else:
+                free_cells = len(nurses) * len(days)
+
+            print(f"[SOLVE] nurses={len(nurses)}, days={len(days)}, free_cells={free_cells}", flush=True)
+
+            if free_cells == 0:
+                self.send_json({
+                    'success': False,
+                    'message': 'ทุก cell ถูกล็อกไว้ ไม่มีช่องว่างให้จัดเวร กรุณาปลดล็อกบางช่องก่อน',
+                    'status': 'ALL_LOCKED'
+                })
+                return
+
             result = roster_engine.solve_schedule(
                 nurses=nurses,
                 days=days,
@@ -148,8 +166,11 @@ class RosterHandler(BaseHTTPRequestHandler):
                 allow_ck=allow_ck,
                 time_limit_sec=time_limit
             )
+            print(f"[SOLVE] success={result.get('success')}, assigned={result.get('newly_assigned_count')}", flush=True)
             self.send_json(result)
         except Exception as e:
+            import traceback
+            print(f"[SOLVE ERROR] {traceback.format_exc()}", flush=True)
             self.send_json({'success': False, 'message': f'Server Error: {str(e)}'}, status=500)
 
     def handle_api_validate(self):
