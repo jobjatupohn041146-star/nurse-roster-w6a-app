@@ -238,9 +238,19 @@
           <span id="tail-status-dot" class="w-2 h-2 rounded-full bg-emerald-500 ml-0.5"></span>
         </button>
 
-        <button onclick="toggleLockMode()" id="btn-lock-mode" class="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg font-medium text-slate-700 flex items-center space-x-1 transition shadow-sm" title="โหมดล็อก/ปลดล็อกช่องเฉพาะ">
+        <button onclick="toggleLockMode()" id="btn-lock-mode" class="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg font-medium text-slate-700 flex items-center space-x-1 transition shadow-sm" title="คลิกช่องในตารางเพื่อล็อกหรือปลดล็อกทีละช่อง">
           <i class="fa-solid fa-lock text-slate-500" id="lock-mode-icon"></i>
-          <span>โหมดล็อกช่อง</span>
+          <span id="lock-mode-text">โหมดคลิกล็อก</span>
+        </button>
+
+        <button onclick="unlockWorkShiftsOnly()" class="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-700 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="ปลดล็อกเวรปกติเพื่อให้ AI จัดใหม่ (คงวันลา V, HBD, LK ไว้)">
+          <i class="fa-solid fa-calendar-check text-sky-600"></i>
+          <span>ปลดล็อกเวรปกติ</span>
+        </button>
+
+        <button onclick="unlockAllShifts()" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-700 rounded-lg font-semibold flex items-center space-x-1 transition shadow-sm" title="ปลดล็อกทุกช่องในตาราง 100%">
+          <i class="fa-solid fa-lock-open text-emerald-600"></i>
+          <span>ปลดล็อกทั้งหมด</span>
         </button>
 
         <div class="relative inline-block text-left">
@@ -610,6 +620,58 @@
       <div class="flex justify-between items-center pt-3 border-t text-xs text-slate-500">
         <span>กฎ 5 ข้อ: เวรติดกันไม่เกิน 4 วัน • ห้ามย้อน P4→C4 • ออฟติดกันไม่เกิน 2 วัน • โควตาต่อคน • อัตรากำลังรายวัน</span>
         <button onclick="closeValidationModal()" class="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold">ปิด</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Smart Unlock & Solve Modal -->
+  <div id="unlock-solve-modal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div class="glass-card max-w-lg w-full p-6 space-y-4 bg-white rounded-2xl shadow-2xl border border-slate-200">
+      <div class="flex items-center space-x-3 text-amber-600">
+        <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-xl shrink-0">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+        </div>
+        <div>
+          <h2 class="text-base font-bold text-slate-900">ตารางมีเวรที่ล็อคอยู่ครบทุกช่อง</h2>
+          <p class="text-xs text-slate-500">เลือกรูปแบบที่ต้องการให้ AI ดำเนินการ</p>
+        </div>
+      </div>
+
+      <div class="space-y-2.5 text-xs">
+        <button onclick="confirmUnlockWorkShiftsAndSolve()" class="w-full p-3.5 bg-gradient-to-r from-sky-50 to-indigo-50 hover:from-sky-100 hover:to-indigo-100 border border-sky-300 rounded-xl text-left flex items-start space-x-3 transition group cursor-pointer">
+          <div class="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold text-sm shrink-0 mt-0.5 shadow-sm">
+            ⚡
+          </div>
+          <div class="flex-1">
+            <div class="font-bold text-slate-900 group-hover:text-sky-700 flex items-center justify-between">
+              <span>ปลดล็อกเวรปกติ แล้วจัดใหม่ทันที (แนะนำ)</span>
+              <span class="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full font-bold">ยอดนิยม</span>
+            </div>
+            <p class="text-slate-600 mt-1 text-[11px] leading-relaxed">
+              คงวันลาที่ขอไว้ (พักร้อน V, วันเกิด HBD, ลากิจ LK, ลาป่วย LP) และให้ AI คำนวณจัดเวรเช้า (C4) และเวรดึก (P4) ใหม่ให้ถูกต้องตามกฎทั้งหมด
+            </p>
+          </div>
+        </button>
+
+        <button onclick="confirmUnlockAllAndSolve()" class="w-full p-3.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl text-left flex items-start space-x-3 transition group cursor-pointer">
+          <div class="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shrink-0 mt-0.5 shadow-sm">
+            🔄
+          </div>
+          <div class="flex-1">
+            <div class="font-bold text-slate-900 group-hover:text-emerald-700">
+              ปลดล็อกทุกช่อง 100% แล้วจัดใหม่ทั้งหมด
+            </div>
+            <p class="text-slate-600 mt-1 text-[11px] leading-relaxed">
+              ล้างสิทธิ์การล็อกทั้งหมด ให้ AI มีอิสระเต็มที่ในการกระจายเวรให้สมดุลและถูกต้องตามกฎ 5 ข้อ
+            </p>
+          </div>
+        </button>
+      </div>
+
+      <div class="flex justify-end pt-2 border-t">
+        <button onclick="closeUnlockSolveModal()" class="px-4 py-2 text-xs text-slate-600 hover:text-slate-900 font-semibold rounded-xl hover:bg-slate-100 transition cursor-pointer">
+          ยกเลิก
+        </button>
       </div>
     </div>
   </div>

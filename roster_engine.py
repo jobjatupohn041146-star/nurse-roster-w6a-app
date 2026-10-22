@@ -518,7 +518,9 @@ def parse_excel_roster(file_path_or_bytes: Any) -> Dict[str, Any]:
             raw_v = ws.cell(r, DAY_COL0 + d).value
             normalized = norm_code(raw_v)
             grid.append(normalized)
-            locked.append(normalized is not None)
+            # By default, only requested leaves (V, HBD, LK, LP, H) are locked.
+            # Work shifts (C4, P4, CK, TRAIN) and days off (-, X) are unlocked so AI can schedule them.
+            locked.append(is_leave(normalized))
 
         nurse_obj = {
             'row': r,

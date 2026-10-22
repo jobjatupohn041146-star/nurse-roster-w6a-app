@@ -143,11 +143,12 @@ function applyRosterData(data) {
   state.nurses = data.nurses || [];
   state.tailShifts = data.default_tail || {};
 
-  // Ensure locked array exists — cells are NOT locked by default on load.
-  // Only cells explicitly locked by the user (via lock mode) should be true.
+  // Ensure locked array exists:
+  // By default, ONLY actual requested leaves (V, HBD, LK, LP, H) should be locked!
+  // Normal work shifts (C4, P4, CK, TRAIN) and regular days off (-, X) must be unlocked so AI can schedule them.
   state.nurses.forEach(n => {
-    if (!Array.isArray(n.locked)) {
-      n.locked = Array(n.grid.length).fill(false);
+    if (!Array.isArray(n.locked) || n.locked.every(v => v === true)) {
+      n.locked = n.grid.map(c => ['V', 'HBD', 'LK', 'LP', 'H'].includes(c));
     }
   });
 
@@ -674,17 +675,20 @@ function toggleLockMode() {
   state.isLockMode = !state.isLockMode;
   const btn = document.getElementById('btn-lock-mode');
   const icon = document.getElementById('lock-mode-icon');
+  const text = document.getElementById('lock-mode-text');
 
   if (state.isLockMode) {
-    btn.classList.add('bg-slate-800', 'text-white');
-    icon.classList.remove('text-slate-500');
-    icon.classList.add('text-amber-400');
-    showToast('เปิดโหมดล็อกช่อง: คลิกช่องในตารางเพื่อล็อก/ปลดล็อก');
+    btn.classList.remove('bg-white', 'text-slate-700', 'border-slate-300');
+    btn.classList.add('bg-amber-500', 'text-white', 'border-amber-600', 'shadow-md', 'ring-2', 'ring-amber-300');
+    icon.className = 'fa-solid fa-lock-open text-white';
+    if (text) text.textContent = 'กำลังคลิกล็อก (เปิดอยู่)';
+    showToast('✏️ เปิดโหมดคลิกล็อก: คลิกช่องในตารางเพื่อล็อกหรือปลดล็อกทีละช่อง');
   } else {
-    btn.classList.remove('bg-slate-800', 'text-white');
-    icon.classList.add('text-slate-500');
-    icon.classList.remove('text-amber-400');
-    showToast('ปิดโหมดล็อกช่อง');
+    btn.classList.remove('bg-amber-500', 'text-white', 'border-amber-600', 'shadow-md', 'ring-2', 'ring-amber-300');
+    btn.classList.add('bg-white', 'text-slate-700', 'border-slate-300');
+    icon.className = 'fa-solid fa-lock text-slate-500';
+    if (text) text.textContent = 'โหมดคลิกล็อก';
+    showToast('ปิดโหมดคลิกล็อกแล้ว');
   }
 }
 
@@ -774,6 +778,15 @@ async function runAutoSolve() {
     return;
   }
 
+  // Count how many cells are free for solver to fill
+  const freeCount = state.nurses.reduce((sum, n) =>
+    sum + n.locked.filter(v => !v).length, 0);
+
+  if (freeCount === 0) {
+    openUnlockSolveModal();
+    return;
+  }
+
   state.isSolving = true;
 
   const btn = document.getElementById('btn-solve');
@@ -785,14 +798,6 @@ async function runAutoSolve() {
   showToast('กำลังประมวลผลจัดเวรด้วย AI Solver (CP-SAT)...', false);
 
   try {
-    // Count how many cells are free for solver to fill
-    const freeCount = state.nurses.reduce((sum, n) =>
-      sum + n.locked.filter(v => !v).length, 0);
-
-    if (freeCount === 0) {
-      showToast('⚠️ ทุก cell ถูกล็อกไว้ กรุณาปลดล็อกบางช่องก่อนจัดเวรอัตโนมัติ', true);
-      return;
-    }
 
     const payload = {
       nurses: state.nurses,
@@ -1022,11 +1027,61 @@ function lockAllCurrentShifts() {
 }
 
 function unlockAllShifts() {
+  pushHistory();
+  let count = 0;
   state.nurses.forEach(n => {
-    n.locked = n.grid.map(() => false);
+    n.locked.forEach((val, idx) => {
+      if (val) count++;
+      n.locked[idx] = false;
+    });
   });
   renderTable();
-  showToast('ปลดล็อกเวรทั้งหมดแล้ว');
+  validateRoster();
+  showToast(`🔓 ปลดล็อกทุกช่องในตารางเรียบร้อยแล้ว (${count} ช่อง) สามารถกดจัดเวรอัตโนมัติได้ทันที`);
+}
+
+function unlockWorkShiftsOnly() {
+  pushHistory();
+  let count = 0;
+  state.nurses.forEach(n => {
+    n.grid.forEach((c, idx) => {
+      // If NOT a requested leave, unlock it!
+      if (!['V', 'HBD', 'LK', 'LP', 'H'].includes(c)) {
+        if (n.locked[idx]) count++;
+        n.locked[idx] = false;
+      }
+    });
+  });
+  renderTable();
+  validateRoster();
+  showToast(`🗓️ ปลดล็อกเวรปกติแล้ว ${count} ช่อง (คงวันลา V/HBD/LK/LP ไว้) สามารถกดจัดเวรอัตโนมัติได้ทันที`);
+}
+
+// Smart Unlock & Solve Modal Handlers
+function openUnlockSolveModal() {
+  const modal = document.getElementById('unlock-solve-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeUnlockSolveModal() {
+  const modal = document.getElementById('unlock-solve-modal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function confirmUnlockWorkShiftsAndSolve() {
+  closeUnlockSolveModal();
+  unlockWorkShiftsOnly();
+  setTimeout(() => {
+    runAutoSolve();
+  }, 100);
+}
+
+function confirmUnlockAllAndSolve() {
+  closeUnlockSolveModal();
+  unlockAllShifts();
+  setTimeout(() => {
+    runAutoSolve();
+  }, 100);
 }
 
 function resetToDefaultData() {
